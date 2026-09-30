@@ -1,7 +1,7 @@
-import crypto from "crypto";
-import { redis } from "../lib/redis.js";
+const crypto = require("crypto");
+const redis = require("../lib/redis");
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
     if (req.method !== "POST") {
         return res.status(405).json({ error: "Method Not Allowed" });
     }
@@ -13,11 +13,14 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: "Missing session or hwid" });
         }
 
-        const sessionData = await redis.get(`session:${session}`);
+        const data = await redis.get(`session:${session}`);
 
-        if (!sessionData) {
+        if (!data) {
             return res.status(401).json({ error: "Invalid or expired session" });
         }
+
+        const sessionData =
+            typeof data === "string" ? JSON.parse(data) : data;
 
         if (sessionData.verified !== true) {
             return res.status(403).json({ error: "Verification required" });
@@ -32,18 +35,21 @@ export default async function handler(req, res) {
             return res.status(403).json({ error: "HWID mismatch" });
         }
 
-        const existingKey = await redis.get(`hwid:${hwidHash}`);
+        const oldKey = await redis.get(`hwid:${hwidHash}`);
 
-        if (existingKey) {
+        if (oldKey) {
             return res.status(200).json({
                 success: true,
-                key: existingKey
+                key: oldKey
             });
         }
 
-        const key = `999MS-${crypto.randomBytes(12).toString("hex").toUpperCase()}`;
+        const key =
+            `999MS-${crypto.randomBytes(12).toString("hex").toUpperCase()}`;
 
-        await redis.set(`hwid:${hwidHash}`, key, { ex: 86400 });
+        await redis.set(`hwid:${hwidHash}`, key, {
+            ex: 86400
+        });
 
         await redis.set(
             `key:${key}`,
@@ -51,7 +57,9 @@ export default async function handler(req, res) {
                 hwidHash,
                 expiresAt: Date.now() + 86400000
             }),
-            { ex: 86400 }
+            {
+                ex: 86400
+            }
         );
 
         return res.status(200).json({
@@ -60,9 +68,9 @@ export default async function handler(req, res) {
             expiresIn: 86400
         });
 
-    } catch {
+    } catch (err) {
         return res.status(500).json({
             error: "Internal server error"
         });
     }
-                                    }
+};
